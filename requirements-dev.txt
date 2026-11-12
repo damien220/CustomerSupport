@@ -1,0 +1,7 @@
+# Dev/test tooling — lite, no torch. Install alongside requirements.txt for
+# implementing and testing everything except the RAG pipeline.
+pytest
+pytest-asyncio
+pytest-cov
+ruff
+mypy

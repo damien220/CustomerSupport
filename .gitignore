@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+data/chroma/
+data/faq.db
+data/*.db
+.secrets.baseline
+CLAUDE.md
+plan.md

@@ -1,0 +1,24 @@
+# Heavy / torch-based extras — install only when you need them; these are large
+# downloads (sentence-transformers pulls in torch). The lite core
+# (requirements.txt) already runs hybrid retrieval without any of this.
+#
+# Local transformer embeddings (EMBED_PROVIDER=local) and the local
+# BGE Reranker v2 (RERANKER=bge):
+sentence-transformers
+# Gradio dev UI (python app.py --mode ui):
+gradio
+# RAGAS quality gate (tests/test_ragas.py, faq_core/eval/ragas_eval.py).
+# Exact pins, chosen 2026-11-12 (every release >= 2 weeks old). ragas 0.4.3 is the
+# latest ragas release; the gate uses its collections metric API. Import-checked
+# and mock-transport-tested in a throwaway venv on Python 3.13 next to the lite
+# core (mcp 1.30, pydantic 2.14) — no torch needed for these; never run live.
+ragas==0.4.3
+datasets==5.1.0            # ragas requires >=4.0
+instructor==1.17.0         # ragas' structured-output layer for the judge LLM
+openai==3.3.0              # OpenAI-compatible judge client (resolver's choice)
+langchain==1.4.7           # ragas imports langchain at module load
+langchain-core==1.7.3
+langchain-openai==1.7.3
+# 0.4.2 removed langchain_community.chat_models.vertexai, which ragas 0.4.3
+# imports unconditionally (ModuleNotFoundError on `import ragas`).
+langchain-community==0.4.1

@@ -1,0 +1,102 @@
+# INSTALL_RAG=1 adds the heavy stack (sentence-transformers, Gradio, RAGAS) to the image;
+# the default is the lite, torch-free image. TORCH_INDEX_URL selects the torch build
+# (see Dockerfile) — defaults to the CPU-only wheel. Override for a CUDA host, e.g.:
+#   TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126 docker compose build
+# (full index list: https://pytorch.org/get-started/locally/)
+x-torch-build-args: &torch-build-args
+  TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+  INSTALL_RAG: ${INSTALL_RAG:-0}
+
+# Every service runs as the HOST user so the bind-mounted ./data stays writable
+# (the image's own appuser has a system UID that does not own ./data on a Linux
+# host, so faq.db / scheduler.db could not be created). Set APP_UID / APP_GID if
+# your user is not 1000:1000, e.g.  APP_UID=$(id -u) APP_GID=$(id -g) docker compose up
+# HOME=/tmp gives that UID (which has no home in the image) a writable cache dir.
+x-app-user: &app-user "${APP_UID:-1000}:${APP_GID:-1000}"
+
+services:
+  api:
+    build:
+      context: .
+      args: *torch-build-args
+    command: ["--mode", "api"]
+    user: *app-user
+    ports: ["8000:8000"]
+    env_file: .env
+    # Phase 5: every route but /health needs auth — set AUTH_MODE + API_KEYS (or
+    # OAUTH_*) in .env, or the container exits with status 2. If you set
+    # ALLOWED_HOSTS, include "localhost" so the image's health check passes.
+    environment:
+      HOME: /tmp
+      BIND_HOST: 0.0.0.0
+      VECTOR_STORE: sqlite-vec
+      SCHEDULER_DB_URL: sqlite+aiosqlite:////app/data/scheduler.db
+      DB_PATH: /app/data/faq.db
+    volumes:
+      - ./data:/app/data
+
+  # Gradio dev UI — NO authentication (it is not behind the API's security
+  # middleware), so it is opt-in and published on loopback only. It needs the
+  # RAG image: INSTALL_RAG=1 docker compose --profile ui up --build ui
+  # (the lite image has no gradio and the container would exit).
+  ui:
+    build:
+      context: .
+      args: *torch-build-args
+    healthcheck:
+      disable: true  # the image check probes :8000/health (REST only)
+    command: ["--mode", "ui"]
+    user: *app-user
+    ports: ["127.0.0.1:7860:7860"]
+    env_file: .env
+    environment:
+      HOME: /tmp
+      VECTOR_STORE: sqlite-vec
+      DB_PATH: /app/data/faq.db
+    volumes:
+      - ./data:/app/data
+    profiles: ["ui"]
+
+  # Remote MCP over Streamable HTTP (http://<host>:8001/mcp), authenticated like
+  # the api service. Put TLS (a reverse proxy or tunnel) in front of it. Start it
+  # with: docker compose --profile remote up mcp-http
+  mcp-http:
+    build:
+      context: .
+      args: *torch-build-args
+    healthcheck:
+      disable: true  # the image check probes :8000/health (REST only)
+    command: ["--mode", "mcp", "--transport", "http"]
+    user: *app-user
+    ports: ["8001:8001"]
+    env_file: .env
+    environment:
+      HOME: /tmp
+      BIND_HOST: 0.0.0.0
+      VECTOR_STORE: sqlite-vec
+      SCHEDULER_DB_URL: sqlite+aiosqlite:////app/data/scheduler-mcp.db
+      DB_PATH: /app/data/faq.db
+    volumes:
+      - ./data:/app/data
+    profiles: ["remote"]
+
+  mcp:
+    build:
+      context: .
+      args: *torch-build-args
+    healthcheck:
+      disable: true  # the image check probes :8000/health (REST only)
+    command: ["--mode", "mcp"]
+    user: *app-user
+    stdin_open: true
+    tty: true
+    env_file: .env
+    environment:
+      HOME: /tmp
+      VECTOR_STORE: sqlite-vec
+      SCHEDULER_DB_URL: sqlite+aiosqlite:////app/data/scheduler.db
+      DB_PATH: /app/data/faq.db
+    volumes:
+      - ./data:/app/data
+    # Run interactively: docker compose run --rm mcp
+    profiles: ["mcp"]

@@ -1,0 +1,18 @@
+# Core (lite, torch-free) — the full service including hybrid retrieval
+# (SQLite FTS5 + sqlite-vec). Optional heavy extras — local transformer
+# embeddings / BGE reranker, Gradio UI, RAGAS eval — live in requirements-rag.txt.
+# Install with requirements-dev.txt for implementing and testing.
+mcp>=1.10,<2         # FastMCP API (structured tool output). mcp 2.x renamed FastMCP -> MCPServer.
+fastapi
+uvicorn[standard]
+pydantic>=2.6
+pydantic-settings
+httpx>=0.27.0        # OpenAI-compatible LLM gateway, API embedder, Cohere reranker, URL ingest
+anthropic            # official SDK behind the Anthropic LLM gateway
+apscheduler==4.0.0a6 # 4.x alpha API (AsyncScheduler); 3.x is incompatible
+sqlalchemy[asyncio]  # persistent APScheduler datastore (SCHEDULER_DB_URL); asyncio extra = greenlet
+aiosqlite            # async sqlite driver for the SQLAlchemy scheduler datastore
+sqlite-vec>=0.1.6,<0.2  # dense vectors in SQLite (vec0 partition keys need 0.1.6+); optional at runtime — BM25-only if it cannot load
+langfuse
+pyjwt[crypto]>=2.10,<3  # OAuth resource-server mode: JWT access tokens (RS/PS/ES/EdDSA via cryptography); PyJWT already comes with mcp
+

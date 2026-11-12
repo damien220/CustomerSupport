@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-type-test:
+    name: Lint, type-check, lite test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install lite + dev requirements
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: ruff check
+        run: ruff check .
+
+      - name: ruff format --check
+        run: ruff format --check .
+
+      - name: mypy --strict
+        run: mypy --strict app.py bootstrap.py server.py remote_mcp.py faq_core/ api/ background/ formatters/ observability/ ui/
+
+      - name: pytest (lite — excludes RAG/RAGAS)
+        run: pytest tests/ -v --tb=short -m "not rag"
+
+      - name: Secrets scan
+        run: |
+          ! grep -rn "sk-ant\|sk-proj\|AIza\|Bearer [A-Za-z0-9]" --include="*.py" . --exclude-dir=.venv
+
+  ragas-gate:
+    name: RAGAS quality gate (manual)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    needs: lint-type-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # CPU-only torch first (as in the Dockerfile): otherwise sentence-transformers
+      # pulls the multi-GB CUDA build. The semantic embedder is required: the
+      # judge refuses the hashing embedder for answer relevancy.
+      - name: Install lite + dev + RAG requirements (CPU torch)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt -r requirements-dev.txt -r requirements-rag.txt
+
+      - name: Check ANTHROPIC_API_KEY is configured
+        run: |
+          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set — the RAGAS gate needs a live" \
+                 "LLM key (it generates real answers and uses a judge LLM to score them)." \
+                 "Add it under Settings > Secrets and re-run."
+            exit 1
+          fi
+
+      # RAGAS_REQUIRE_LIVE=1 turns every skip (ragas missing, no key, hashing
+      # embedder, client mode) into a failure, so this job cannot pass without
+      # actually scoring answers.
+      - name: RAGAS quality gate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RAGAS_REQUIRE_LIVE: "1"
+          LLM_MODE: api
+          LLM_PROVIDER: anthropic
+          EMBED_PROVIDER: local
+        run: pytest tests/test_ragas.py -v -rs
